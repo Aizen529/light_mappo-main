@@ -59,51 +59,29 @@ Simply download the code, create a Conda environment, and then run the code, add
 
 ## Usage
 
-- The environment part is an empty implementation, and the implementation of the environment part in the light_mappo/envs/env_core.py file is: [Code] (https://github.com/tinyzqh/light_mappo/blob/main/envs/env_core.py)
+`envs/env_core.py` now contains a fully functional grid-coverage environment that matches the problem statement:
 
-```python
-import numpy as np
-class EnvCore(object):
-    """
-    # Environment Agent
-    """
-    def __init__(self):
-        self.agent_num = 2 # set the number of agents(aircrafts), here set to two
-        self.obs_dim = 14 # set the observation dimension of agents
-        self.action_dim = 5 # set the action dimension of agents, here set to a five-dimensional
+- **Map:** configurable H×W global occupancy grid (defaults to 8×8) with uncovered, covered, and obstacle states. `DEFAULT_OBSTACLES` controls the static obstacle layout.
+- **Agents:** four robots (red, yellow, blue, green). Red/yellow/blue share five cardinal actions, while the green robot can additionally move diagonally (nine discrete actions total).
+- **Observations:** every step each agent receives a 3×3 local map with four semantic channels (self trajectory history inside the FOV, neighbors’ relative positions, obstacles, and already-covered cells). The observation returned to MAPPO is the flattened tensor so it plugs directly into the existing networks.
+- **Dynamics and collisions:** movement happens synchronously. Invalid moves (off-map or into obstacles) are turned into `stay`, multiple agents trying to enter the same cell all stay in place, and head-on swaps are cancelled for both participants.
+- **Reward:** +1 when an agent covers a previously unseen traversable cell. The episode terminates once every free cell is covered or when the max episode length is reached.
+- **Reset logic:** the first episode spawns robots at `DEFAULT_INITIAL_POSITIONS`; subsequent episodes sample random non-overlapping spawn cells that avoid obstacles. You can override these defaults by editing the constants near the top of `EnvCore` or by instantiating `EnvCore` with custom parameters in `make_train_env`.
+- **Visualization:** `EnvCore.render()` returns an RGB frame (and optionally displays it with matplotlib); there is also an ASCII fallback when running in a pure terminal.
 
-    def reset(self):
-        """
-        # When self.agent_num is set to 2 agents, the return value is a list, and each list contains observation data of shape = (self.obs_dim,)
-        """
-        sub_agent_obs = []
-        for i in range(self.agent_num):
-            sub_obs = np.random.random(size=(14, ))
-            sub_agent_obs.append(sub_obs)
-        return sub_agent_obs
+The MAPPO wrappers in `envs/env_discrete.py` automatically pick up the heterogeneous action spaces, so no extra glue code is needed. `train/train.py` now instantiates the discrete environment by default and infers the agent count from the environment, so the standard training entrypoint works out of the box:
 
-    def step(self, actions):
-        """
-        # When self.agent_num is set to 2 agents, the input of actions is a two-dimensional list, and each list contains action data of shape = (self.action_dim,).
-        # By default, the input is a list containing two elements, because the action dimension is 5, so each element has a shape of (5,)
-        """
-        sub_agent_obs = []
-        sub_agent_reward = []
-        sub_agent_done = []
-        sub_agent_info = []
-        for i in range(self.agent_num):
-            sub_agent_obs.append(np.random.random(size=(14,)))
-            sub_agent_reward.append([np.random.rand()])
-            sub_agent_done.append(False)
-            sub_agent_info.append({})
-
-        return [sub_agent_obs, sub_agent_reward, sub_agent_done, sub_agent_info]
+```bash
+python train/train.py --algorithm_name rmappo --experiment_name grid_demo --num_env_steps 200000
 ```
 
+If you want to preview the environment without training, run the visualization helper:
 
-Just write this part of the code, and you can seamlessly connect with MAPPO. After env_core.py, two files, env_discrete.py and env_continuous.py, were separately extracted to encapsulate the action space and discrete action space. In elif self.continuous_action: in algorithms/utils/act.py, this judgment logic is also used to handle continuous action spaces. The # TODO here in runner/shared/env_runner.py is also used to handle continuous action spaces.
+```bash
+python scripts/demo_grid_env.py --episodes 5 --sleep 0.1
+```
 
-In the train.py file, choose to comment out continuous environment or discrete environment to switch the demo environment.
+This script samples random actions, calls the new renderer, and prints per-step coverage statistics. Use `--render_mode rgb_array` to consume frames in downstream tooling.
 
 ## Cite this work
 
@@ -133,4 +111,3 @@ If you use `light_mappo`, please cite:
 ## License
 
 [MIT](LICENSE) © tinyzqh
-

@@ -22,7 +22,11 @@ class DiscreteActionEnv(object):
         self.num_agent = self.env.agent_num
 
         self.signal_obs_dim = self.env.obs_dim
-        self.signal_action_dim = self.env.action_dim
+        if hasattr(self.env, "action_dims"):
+            self.signal_action_dims = list(self.env.action_dims)
+        else:
+            self.signal_action_dims = [self.env.action_dim for _ in range(self.num_agent)]
+        self.signal_action_dim = self.signal_action_dims[0]
 
         # if true, action is a number 0...N, otherwise action is a one-hot N-dimensional vector
         self.discrete_action_input = False
@@ -37,8 +41,9 @@ class DiscreteActionEnv(object):
         share_obs_dim = 0
         total_action_space = []
         for agent_idx in range(self.num_agent):
+            current_action_dim = self.signal_action_dims[agent_idx]
             # physical action space
-            u_action_space = spaces.Discrete(self.signal_action_dim)  # 5个离散的动作
+            u_action_space = spaces.Discrete(current_action_dim)  # 离散动作集合
 
             # if self.movable:
             total_action_space.append(u_action_space)
