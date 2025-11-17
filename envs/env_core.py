@@ -35,10 +35,12 @@ class EnvCore(object):
         (7, 7),
     )
     DEFAULT_OBSTACLES: Tuple[Tuple[int, int], ...] = (
-        (3, 3),
-        (3, 4),
-        (4, 3),
-        (4, 4),
+        (1, 2),(1, 3),(1, 4),(1, 5),(1, 6),
+        (2, 5),(2, 6),
+        (3, 5),(3, 6),
+        (5, 2),(5, 3),
+        (6, 6),
+        (7, 6),
     )
 
     COLOR_LEGEND = {
@@ -49,6 +51,10 @@ class EnvCore(object):
         "yellow": (247, 189, 57),
         "blue": (54, 135, 194),
         "green": (80, 160, 90),
+        "red_path": (247, 143, 152),
+        "yellow_path": (252, 214, 138),
+        "blue_path": (123, 178, 226),
+        "green_path": (140, 199, 149),
     }
 
     def __init__(
@@ -112,11 +118,16 @@ class EnvCore(object):
             raise ValueError("Not enough traversable cells to place all agents.")
 
         self.coverage_map = np.zeros_like(self.obstacle_map)
+        self.trail_owner = -np.ones((self.map_height, self.map_width), dtype=np.int32)
         self.history_maps: List[np.ndarray] = []
         self.agent_positions: List[Tuple[int, int]] = []
         self.coverage_count = 0
         self.current_step = 0
         self.episode_count = 0
+        self.agent_colors = [
+            np.array(self.COLOR_LEGEND[spec["name"]], dtype=np.uint8) for spec in self.agent_specs
+        ]
+        self.path_colors = self._build_path_colors()
 
         # Rendering control.
         self._render_scale = 36
@@ -135,6 +146,7 @@ class EnvCore(object):
         locations for subsequent episodes.
         """
         self.coverage_map = np.zeros_like(self.obstacle_map)
+        self.trail_owner.fill(-1)
         self.history_maps = [np.zeros_like(self.obstacle_map) for _ in range(self.agent_num)]
         self.agent_positions = self._spawn_agents()
         self.coverage_count = 0
@@ -146,6 +158,8 @@ class EnvCore(object):
             if self.coverage_map[pos] == 0:
                 self.coverage_map[pos] = 1.0
                 self.coverage_count += 1
+            if self.trail_owner[pos] == -1:
+                self.trail_owner[pos] = agent_idx
 
         return self._build_observations()
 
@@ -183,6 +197,8 @@ class EnvCore(object):
                 self.coverage_map[row, col] = 1.0
                 self.coverage_count += 1
                 newly_covered = self.cover_reward
+                if self.trail_owner[row, col] == -1:
+                    self.trail_owner[row, col] = agent_idx
 
             reward = newly_covered
             rewards.append(np.array([reward], dtype=np.float32))
@@ -311,6 +327,14 @@ class EnvCore(object):
             return list(actions)
 
         raise ValueError("Unsupported action format supplied to the environment.")
+
+    def _build_path_colors(self) -> List[np.ndarray]:
+        colors = []
+        for spec in self.agent_specs:
+            key = f"{spec['name']}_path"
+            base = self.COLOR_LEGEND.get(key, self.COLOR_LEGEND.get(spec["name"], (255, 255, 255)))
+            colors.append(np.array(base, dtype=np.uint8))
+        return colors
 
     def _decode_action(self, agent_idx: int, action) -> Tuple[int, str, Tuple[int, int]]:
         action_set = self.agent_action_sets[agent_idx]
@@ -457,15 +481,47 @@ class EnvCore(object):
         covered_mask = self.coverage_map == 1
         frame[covered_mask] = self.COLOR_LEGEND["covered"]
 
+        for agent_idx in range(self.agent_num):
+            path_mask = self.trail_owner == agent_idx
+            frame[path_mask] = self.path_colors[agent_idx]
+
         obstacle_mask = self.obstacle_map == 1
         frame[obstacle_mask] = self.COLOR_LEGEND["obstacle"]
 
-        for agent_idx, (row, col) in enumerate(self.agent_positions):
-            color_name = self.agent_specs[agent_idx]["name"]
-            frame[row, col] = self.COLOR_LEGEND.get(color_name, self.COLOR_LEGEND["covered"])
-
         scale = self._render_scale
         frame = np.kron(frame, np.ones((scale, scale, 1), dtype=np.uint8))
+        frame = self._draw_grid_lines(frame, scale)
+        frame = self._draw_agent_circles(frame, scale)
+        return frame
+
+    def _draw_grid_lines(self, frame: np.ndarray, scale: int) -> np.ndarray:
+        """Draw subtle grid lines between upsampled cells for visualization clarity."""
+        color = np.array((60, 60, 60), dtype=np.uint8)
+        height, width, _ = frame.shape
+        for row in range(scale, height, scale):
+            frame[row - 1 : row + 1, :, :] = color
+        for col in range(scale, width, scale):
+            frame[:, col - 1 : col + 1, :] = color
+        return frame
+
+    def _draw_agent_circles(self, frame: np.ndarray, scale: int) -> np.ndarray:
+        """Render agents as colored disks centered in their respective cells."""
+        for agent_idx, (row, col) in enumerate(self.agent_positions):
+            center_r = row * scale + scale // 2
+            center_c = col * scale + scale // 2
+            radius = max(scale // 2 - 2, 2)
+
+            r_min = max(center_r - radius, 0)
+            r_max = min(center_r + radius, frame.shape[0] - 1)
+            c_min = max(center_c - radius, 0)
+            c_max = min(center_c + radius, frame.shape[1] - 1)
+
+            region = frame[r_min : r_max + 1, c_min : c_max + 1]
+            rows = np.arange(r_min, r_max + 1)[:, None]
+            cols = np.arange(c_min, c_max + 1)[None, :]
+            mask = (rows - center_r) ** 2 + (cols - center_c) ** 2 <= radius ** 2
+            region[mask] = self.agent_colors[agent_idx]
+
         return frame
 
     def _render_with_text(self):
