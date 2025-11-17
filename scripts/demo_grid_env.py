@@ -39,7 +39,7 @@ def run_demo(args):
 def parse_args():
     parser = argparse.ArgumentParser(description="Demo script to visualize the grid coverage environment.")
     parser.add_argument("--episodes", type=int, default=3, help="Number of demo episodes.")
-    parser.add_argument("--episode_length", type=int, default=50, help="Max steps per episode.")
+    parser.add_argument("--episode_length", type=int, default=500, help="Max steps per episode.")
     parser.add_argument("--sleep", type=float, default=0.2, help="Delay between renders (seconds).")
     parser.add_argument(
         "--render_mode",

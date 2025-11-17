@@ -63,7 +63,7 @@ class EnvCore(object):
         map_width: int = 8,
         fov_size: int = 3,
         cover_reward: float = 1.0,
-        max_episode_steps: Optional[int] = None,
+        max_episode_steps: Optional[int] = 500,
         obstacle_coords: Optional[Sequence[Tuple[int, int]]] = None,
         initial_positions: Optional[Sequence[Tuple[int, int]]] = None,
         seed: Optional[int] = None,
@@ -135,6 +135,7 @@ class EnvCore(object):
         self._render_artist = None
         self._render_fig = None
         self._render_ax = None
+        self._render_text_artist = None
 
     # -------------------------------------------------------------------------
     # Public API expected by the MAPPO wrappers
@@ -248,10 +249,24 @@ class EnvCore(object):
             self._render_fig, self._render_ax = plt.subplots(figsize=(4, 4))
             self._render_artist = self._render_ax.imshow(frame)
             self._render_ax.axis("off")
+            self._render_text_artist = self._render_ax.text(
+                0.02,
+                1.02,
+                "",
+                transform=self._render_ax.transAxes,
+                ha="left",
+                va="bottom",
+                fontsize=12,
+                color="black",
+                bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.85, "pad": 2},
+            )
             self._render_initialized = True
         else:
             assert self._render_artist is not None
             self._render_artist.set_data(frame)
+
+        if self._render_text_artist is not None:
+            self._render_text_artist.set_text(self._format_step_annotation())
 
         assert self._render_fig is not None
         self._render_fig.canvas.draw()
@@ -274,6 +289,7 @@ class EnvCore(object):
         self._render_fig = None
         self._render_ax = None
         self._render_artist = None
+        self._render_text_artist = None
         self._render_initialized = False
 
     # -------------------------------------------------------------------------
@@ -523,6 +539,10 @@ class EnvCore(object):
             region[mask] = self.agent_colors[agent_idx]
 
         return frame
+
+    def _format_step_annotation(self) -> str:
+        """Readable step counter displayed above the grid."""
+        return f"Steps: {self.current_step}"
 
     def _render_with_text(self):
         legend = {
