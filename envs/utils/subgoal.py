@@ -16,7 +16,6 @@ class Subgoal:
 
     id: int
     centroid: Tuple[float, float]
-    mask: np.ndarray
     area: int
     bbox: Tuple[int, int, int, int]
     extra: Optional[Dict] = None
@@ -83,9 +82,6 @@ class SubgoalGenerator:
             cols = coords[:, 1]
             centroid = (float(rows.mean()), float(cols.mean()))
 
-            region_mask = np.zeros_like(uncovered_mask, dtype=bool)
-            region_mask[rows, cols] = True
-
             min_row = int(rows.min())
             max_row = int(rows.max())
             min_col = int(cols.min())
@@ -96,7 +92,6 @@ class SubgoalGenerator:
                 Subgoal(
                     id=len(subgoals),
                     centroid=centroid,
-                    mask=region_mask,
                     area=int(area),
                     bbox=bbox,
                     extra={},
