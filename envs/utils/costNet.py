@@ -40,5 +40,6 @@ class GeomCostNet(nn.Module):
         Q = self.query_proj(robot_embs)
         K = self.key_proj(goal_embs)
         logits = (Q @ K.T) / self.scale
-        sim = torch.softmax(logits, dim=-1)
+        # Softmax over goals for each robot (row-wise).
+        sim = torch.softmax(logits, dim=1)
         return -sim
