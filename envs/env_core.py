@@ -224,6 +224,19 @@ class EnvCore(object):
 
         return [observations, rewards, dones, infos]
 
+    def get_global_grid(self) -> np.ndarray:
+        """
+        Compose a single-channel global grid for downstream modules.
+        Encoding convention:
+            -1: obstacle / non-traversable
+             0: uncovered traversable cell
+             1: covered traversable cell
+        """
+        grid = np.zeros((self.map_height, self.map_width), dtype=np.int8)
+        grid[self.coverage_map > 0] = 1
+        grid[self.obstacle_map > 0] = -1
+        return grid
+
     def render(self, mode: str = "rgb_array"):
         """
         Render the global grid. In rgb_array mode an RGB numpy array is
