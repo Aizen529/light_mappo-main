@@ -1,6 +1,10 @@
+import math
 from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
+
+from envs.utils.assigner import AssignmentResult
+from envs.utils.reward_util import compute_rewards
 
 
 class EnvCore(object):
@@ -67,6 +71,9 @@ class EnvCore(object):
         obstacle_coords: Optional[Sequence[Tuple[int, int]]] = None,
         initial_positions: Optional[Sequence[Tuple[int, int]]] = None,
         seed: Optional[int] = None,
+        train_mode: bool = True,
+        guidance_reward: float = 0.2,
+        subgoal_update_interval: int = 1,
     ):
         if fov_size % 2 == 0:
             raise ValueError("fov_size must be an odd number to center the agent's view.")
@@ -77,6 +84,9 @@ class EnvCore(object):
         self.view_radius = fov_size // 2
         self.cover_reward = cover_reward
         self.max_episode_steps = max_episode_steps or map_height * map_width * 2
+        self.train_mode = train_mode
+        self.guidance_reward = guidance_reward
+        self.subgoal_update_interval = max(1, int(subgoal_update_interval))
 
         self._rng = np.random.default_rng(seed)
 
@@ -93,7 +103,7 @@ class EnvCore(object):
         # Retain compatibility with wrappers that expect a scalar attribute.
         self.action_dim = max(self.action_dims)
 
-        self.obs_channels = 4  # history, neighbors, obstacles, coverage
+        self.obs_channels = 5  # history, neighbors, obstacles, coverage, sub-goal
         self.obs_dim = self.obs_channels * self.fov_size * self.fov_size
 
         self._preset_positions = (
@@ -128,6 +138,7 @@ class EnvCore(object):
             np.array(self.COLOR_LEGEND[spec["name"]], dtype=np.uint8) for spec in self.agent_specs
         ]
         self.path_colors = self._build_path_colors()
+        self._reset_assignments()
 
         # Rendering control.
         self._render_scale = 36
@@ -149,6 +160,7 @@ class EnvCore(object):
         self.coverage_map = np.zeros_like(self.obstacle_map)
         self.trail_owner.fill(-1)
         self.history_maps = [np.zeros_like(self.obstacle_map) for _ in range(self.agent_num)]
+        self._reset_assignments()
         self.agent_positions = self._spawn_agents()
         self.coverage_count = 0
         self.current_step = 0
@@ -191,18 +203,21 @@ class EnvCore(object):
         self.agent_positions = final_positions
         self.current_step += 1
 
+        newly_covered_flags: List[bool] = []
+        curr_goal_dists: List[Optional[float]] = []
+
         for agent_idx, pos in enumerate(self.agent_positions):
             row, col = pos
-            newly_covered = 0.0
+            made_new_coverage = False
             if self.coverage_map[row, col] == 0:
                 self.coverage_map[row, col] = 1.0
                 self.coverage_count += 1
-                newly_covered = self.cover_reward
+                made_new_coverage = True
                 if self.trail_owner[row, col] == -1:
                     self.trail_owner[row, col] = agent_idx
 
-            reward = newly_covered
-            rewards.append(np.array([reward], dtype=np.float32))
+            newly_covered_flags.append(made_new_coverage)
+            curr_goal_dists.append(self._distance_to_local_target(agent_idx))
             self.history_maps[agent_idx][row, col] = 1.0
 
             covered_ratio = self.coverage_count / float(self.total_traversable_cells)
@@ -211,12 +226,28 @@ class EnvCore(object):
                     "agent": self.agent_specs[agent_idx]["name"],
                     "action": action_labels[agent_idx],
                     "collision": collisions[agent_idx],
-                    "made_progress": newly_covered > 0,
+                    "made_progress": made_new_coverage,
                     "position": pos,
                     "covered_ratio": covered_ratio,
                     "step": self.current_step,
                 }
             )
+
+        has_local_subgoal = [target is not None for target in self.local_subgoal_targets]
+        local_rewards, global_reward = compute_rewards(
+            newly_covered_flags,
+            has_local_subgoal,
+            self.prev_goal_dists,
+            curr_goal_dists,
+            train_mode=self.train_mode,
+            coverage_reward=self.cover_reward,
+            guidance_reward=self.guidance_reward,
+        )
+        self.prev_goal_dists = curr_goal_dists
+        rewards = [np.array([rew], dtype=np.float32) for rew in local_rewards]
+        for idx in range(self.agent_num):
+            infos[idx]["global_reward"] = global_reward
+            infos[idx]["has_local_subgoal"] = has_local_subgoal[idx]
 
         done = self._episode_done()
         dones = [done for _ in range(self.agent_num)]
@@ -306,8 +337,77 @@ class EnvCore(object):
         self._render_initialized = False
 
     # -------------------------------------------------------------------------
+    # Assignment interfaces
+    # -------------------------------------------------------------------------
+    def apply_assignment_result(self, assignment: Optional[AssignmentResult]):
+        """
+        Cache the latest assignment output generated by the leader module.
+
+        Args:
+            assignment: AssignmentResult describing per-agent targets. If None,
+                previous assignments are cleared (agents receive zero sub-goal
+                channels and no guidance reward).
+        """
+        if assignment is None:
+            self._reset_assignments()
+            return
+
+        if len(assignment.has_global_goal) != self.agent_num:
+            raise ValueError("AssignmentResult size mismatch with agent count.")
+
+        self.has_global_goal = list(assignment.has_global_goal)
+        self.global_goal_positions = list(assignment.global_goal_positions)
+        self.local_subgoal_targets = list(assignment.local_subgoal_positions)
+        self._refresh_goal_distance_cache()
+
+    def clear_assignments(self):
+        """Explicitly clear cached assignments."""
+        self._reset_assignments()
+
+    def should_update_subgoals(self) -> bool:
+        """Utility for external schedulers to query if an update is due."""
+        interval = max(1, self.subgoal_update_interval)
+        return self.current_step % interval == 0
+
+    # -------------------------------------------------------------------------
     # Internal helpers
     # -------------------------------------------------------------------------
+    def _reset_assignments(self):
+        self.has_global_goal = [False for _ in range(self.agent_num)]
+        self.global_goal_positions: List[Optional[Tuple[int, int]]] = [None for _ in range(self.agent_num)]
+        self.local_subgoal_targets: List[Optional[Tuple[int, int]]] = [None for _ in range(self.agent_num)]
+        self.prev_goal_dists: List[Optional[float]] = [None for _ in range(self.agent_num)]
+
+    def _refresh_goal_distance_cache(self):
+        cache: List[Optional[float]] = []
+        for agent_idx in range(self.agent_num):
+            cache.append(self._distance_to_local_target(agent_idx))
+        self.prev_goal_dists = cache
+
+    def _distance_to_local_target(self, agent_idx: int) -> Optional[float]:
+        if agent_idx >= len(self.agent_positions):
+            return None
+        target = self.local_subgoal_targets[agent_idx]
+        if target is None:
+            return None
+        row, col = self.agent_positions[agent_idx]
+        return math.hypot(target[0] - row, target[1] - col)
+
+    def _build_subgoal_channel(self, agent_idx: int) -> np.ndarray:
+        channel = np.zeros((self.fov_size, self.fov_size), dtype=np.float32)
+        if agent_idx >= len(self.agent_positions):
+            return channel
+        target = self.local_subgoal_targets[agent_idx]
+        if target is None:
+            return channel
+
+        center_row, center_col = self.agent_positions[agent_idx]
+        row_offset = target[0] - center_row
+        col_offset = target[1] - center_col
+        if abs(row_offset) <= self.view_radius and abs(col_offset) <= self.view_radius:
+            channel[row_offset + self.view_radius, col_offset + self.view_radius] = 1.0
+        return channel
+
     def _validate_coordinates(self, coords: Sequence[Tuple[int, int]]):
         for row, col in coords:
             if not (0 <= row < self.map_height and 0 <= col < self.map_width):
@@ -458,7 +558,8 @@ class EnvCore(object):
             neighbors = self._build_neighbor_channel(agent_idx)
             obstacles = self._extract_patch(self.obstacle_map, center)
             covered = self._extract_patch(self.coverage_map, center)
-            stacked = np.stack([history, neighbors, obstacles, covered], axis=0)
+            subgoal_channel = self._build_subgoal_channel(agent_idx)
+            stacked = np.stack([history, neighbors, obstacles, covered, subgoal_channel], axis=0)
             observations.append(stacked.reshape(-1).astype(np.float32))
         return observations
 

@@ -224,6 +224,12 @@ def get_config():
         default=False,
         help="Whether to use global state or concatenated obs",
     )
+    parser.add_argument(
+        "--subgoal_update_interval",
+        type=int,
+        default=2,
+        help="Number of environment steps between sub-goal re-assignment.",
+    )
 
     # replay buffer parameters
     parser.add_argument("--episode_length", type=int, default=200, help="Max length for any episode")

@@ -1,7 +1,10 @@
 import gym
 from gym import spaces
 import numpy as np
+from typing import Optional
+
 from envs.env_core import EnvCore
+from envs.utils.assigner import AssignmentResult
 
 
 class ContinuousActionEnv(object):
@@ -10,8 +13,19 @@ class ContinuousActionEnv(object):
     Wrapper for continuous action environment.
     """
 
-    def __init__(self):
-        self.env = EnvCore()
+    def __init__(
+        self,
+        train_mode: bool = True,
+        subgoal_update_interval: int = 1,
+        guidance_reward: float = 0.2,
+        **env_kwargs,
+    ):
+        self.env = EnvCore(
+            train_mode=train_mode,
+            guidance_reward=guidance_reward,
+            subgoal_update_interval=subgoal_update_interval,
+            **env_kwargs,
+        )
         self.num_agent = self.env.agent_num
 
         self.signal_obs_dim = self.env.obs_dim
@@ -89,3 +103,12 @@ class ContinuousActionEnv(object):
 
     def seed(self, seed):
         pass
+
+    def apply_assignment_result(self, assignment: Optional[AssignmentResult]):
+        self.env.apply_assignment_result(assignment)
+
+    def clear_assignments(self):
+        self.env.clear_assignments()
+
+    def should_update_subgoals(self) -> bool:
+        return self.env.should_update_subgoals()

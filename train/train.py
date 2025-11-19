@@ -38,7 +38,10 @@ def make_train_env(all_args):
 
             from envs.env_discrete import DiscreteActionEnv
 
-            env = DiscreteActionEnv()
+            env = DiscreteActionEnv(
+                train_mode=True,
+                subgoal_update_interval=all_args.subgoal_update_interval,
+            )
 
             env.seed(all_args.seed + rank * 1000)
             return env
@@ -57,7 +60,10 @@ def make_eval_env(all_args):
 
             # env = ContinuousActionEnv()
             from envs.env_discrete import DiscreteActionEnv
-            env = DiscreteActionEnv()
+            env = DiscreteActionEnv(
+                train_mode=False,
+                subgoal_update_interval=all_args.subgoal_update_interval,
+            )
             env.seed(all_args.seed + rank * 1000)
             return env
 
