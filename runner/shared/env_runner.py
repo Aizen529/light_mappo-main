@@ -100,6 +100,17 @@ class EnvRunner(Runner):
                 #         env_infos[agent_k] = idv_rews
 
                 train_infos["average_episode_rewards"] = np.mean(self.buffer.rewards) * self.episode_length
+
+                # episode_rewards: [n_rollout_threads, num_agents, 1]
+                episode_rewards = np.sum(self.buffer.rewards, axis=0)
+                per_agent_episode_rewards = np.mean(episode_rewards, axis=0)
+                for agent_id in range(self.num_agents):
+                    key = f"agent{agent_id}/average_episode_rewards"
+                    train_infos[key] = per_agent_episode_rewards[agent_id].item()
+                train_infos["all_agents/episode_rewards_sum"] = np.mean(
+                    np.sum(episode_rewards, axis=1)
+                ).item()
+
                 print("average episode rewards is {}".format(train_infos["average_episode_rewards"]))
                 self.log_train(train_infos, total_num_steps)
                 # self.log_env(env_infos, total_num_steps)
@@ -268,9 +279,18 @@ class EnvRunner(Runner):
             eval_masks[eval_dones == True] = np.zeros(((eval_dones == True).sum(), 1), dtype=np.float32)
 
         eval_episode_rewards = np.array(eval_episode_rewards)
+        per_env_agent_returns = np.sum(eval_episode_rewards, axis=0)
+
         eval_env_infos = {}
-        eval_env_infos["eval_average_episode_rewards"] = np.sum(np.array(eval_episode_rewards), axis=0)
-        eval_average_episode_rewards = np.mean(eval_env_infos["eval_average_episode_rewards"])
+        eval_env_infos["eval_average_episode_rewards"] = per_env_agent_returns
+        for agent_id in range(self.num_agents):
+            key = f"agent{agent_id}/eval_average_episode_rewards"
+            eval_env_infos[key] = per_env_agent_returns[:, agent_id]
+        eval_env_infos["all_agents/eval_episode_rewards_sum"] = np.sum(
+            per_env_agent_returns, axis=1, keepdims=True
+        )
+
+        eval_average_episode_rewards = np.mean(per_env_agent_returns)
         print("eval average episode rewards of agent: " + str(eval_average_episode_rewards))
         self.log_env(eval_env_infos, total_num_steps)
 

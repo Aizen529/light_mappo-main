@@ -83,20 +83,27 @@ class EnvRunner(Runner):
                     )
                 )
 
-                if self.env_name == "MPE":
-                    for agent_id in range(self.num_agents):
+                agent_episode_returns = []
+                for agent_id in range(self.num_agents):
+                    episode_rewards = np.sum(self.buffer[agent_id].rewards, axis=0)
+                    agent_episode_returns.append(episode_rewards)
+                    train_infos[agent_id]["average_episode_rewards"] = float(np.mean(episode_rewards))
+
+                    if self.env_name == "MPE":
                         idv_rews = []
                         for info in infos:
                             if "individual_reward" in info[agent_id].keys():
                                 idv_rews.append(info[agent_id]["individual_reward"])
-                        train_infos[agent_id].update({"individual_rewards": np.mean(idv_rews)})
-                        train_infos[agent_id].update(
-                            {
-                                "average_episode_rewards": np.mean(self.buffer[agent_id].rewards)
-                                * self.episode_length
-                            }
-                        )
+                        train_infos[agent_id]["individual_rewards"] = np.mean(idv_rews) if len(idv_rews) > 0 else 0.0
+
+                agent_episode_returns = np.array(agent_episode_returns)
+                all_agents_episode_rewards = float(np.mean(np.sum(agent_episode_returns, axis=0)))
                 self.log_train(train_infos, total_num_steps)
+                self.writter.add_scalars(
+                    "all_agents/episode_rewards_sum",
+                    {"all_agents/episode_rewards_sum": all_agents_episode_rewards},
+                    total_num_steps,
+                )
 
             # eval
             if episode % self.eval_interval == 0 and self.use_eval:
@@ -298,14 +305,23 @@ class EnvRunner(Runner):
             eval_masks[eval_dones == True] = np.zeros(((eval_dones == True).sum(), 1), dtype=np.float32)
 
         eval_episode_rewards = np.array(eval_episode_rewards)
+        per_env_agent_returns = np.sum(eval_episode_rewards, axis=0)
 
         eval_train_infos = []
         for agent_id in range(self.num_agents):
-            eval_average_episode_rewards = np.mean(np.sum(eval_episode_rewards[:, :, agent_id], axis=0))
+            agent_returns = per_env_agent_returns[:, agent_id]
+            eval_average_episode_rewards = np.mean(agent_returns)
             eval_train_infos.append({"eval_average_episode_rewards": eval_average_episode_rewards})
             print("eval average episode rewards of agent%i: " % agent_id + str(eval_average_episode_rewards))
 
         self.log_train(eval_train_infos, total_num_steps)
+
+        all_agents_episode_rewards = float(np.mean(np.sum(per_env_agent_returns, axis=1)))
+        self.writter.add_scalars(
+            "all_agents/eval_episode_rewards_sum",
+            {"all_agents/eval_episode_rewards_sum": all_agents_episode_rewards},
+            total_num_steps,
+        )
 
     @torch.no_grad()
     def render(self):
