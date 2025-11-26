@@ -83,19 +83,29 @@ class EnvRunner(Runner):
                     )
                 )
 
-                if self.env_name == "MPE":
-                    for agent_id in range(self.num_agents):
-                        idv_rews = []
+                per_agent_episode_rewards = []
+                for agent_id in range(self.num_agents):
+                    idv_rews = []
+                    if infos is not None:
                         for info in infos:
-                            if "individual_reward" in info[agent_id].keys():
-                                idv_rews.append(info[agent_id]["individual_reward"])
-                        train_infos[agent_id].update({"individual_rewards": np.mean(idv_rews)})
-                        train_infos[agent_id].update(
-                            {
-                                "average_episode_rewards": np.mean(self.buffer[agent_id].rewards)
-                                * self.episode_length
-                            }
-                        )
+                            agent_info = None
+                            try:
+                                agent_info = info[agent_id]
+                            except (KeyError, IndexError, TypeError):
+                                agent_info = None
+                            if isinstance(agent_info, dict) and "individual_reward" in agent_info:
+                                idv_rews.append(agent_info["individual_reward"])
+                    if len(idv_rews) > 0:
+                        train_infos[agent_id]["individual_rewards"] = np.mean(idv_rews)
+
+                    avg_episode_reward = np.mean(self.buffer[agent_id].rewards) * self.episode_length
+                    train_infos[agent_id]["average_episode_rewards"] = avg_episode_reward
+                    per_agent_episode_rewards.append(avg_episode_reward)
+
+                total_episode_reward = float(np.sum(per_agent_episode_rewards))
+                self._log_all_agents_scalar(
+                    "all_agents/total_episode_rewards", total_episode_reward, total_num_steps
+                )
                 self.log_train(train_infos, total_num_steps)
 
             # eval
@@ -305,7 +315,16 @@ class EnvRunner(Runner):
             eval_train_infos.append({"eval_average_episode_rewards": eval_average_episode_rewards})
             print("eval average episode rewards of agent%i: " % agent_id + str(eval_average_episode_rewards))
 
+        total_eval_reward = float(np.sum([info["eval_average_episode_rewards"] for info in eval_train_infos]))
+        self._log_all_agents_scalar(
+            "all_agents/eval_total_episode_rewards", total_eval_reward, total_num_steps
+        )
         self.log_train(eval_train_infos, total_num_steps)
+
+    def _log_all_agents_scalar(self, tag, value, total_num_steps):
+        """Helper to log scalars without agent-specific prefixes."""
+        if hasattr(self, "writter"):
+            self.writter.add_scalars(tag, {tag: value}, total_num_steps)
 
     @torch.no_grad()
     def render(self):

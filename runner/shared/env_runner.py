@@ -99,6 +99,10 @@ class EnvRunner(Runner):
                 #         agent_k = 'agent%i/individual_rewards' % agent_id
                 #         env_infos[agent_k] = idv_rews
 
+                agent_episode_rewards, total_episode_reward = self._mean_agent_episode_rewards(self.buffer.rewards)
+                for agent_id, agent_reward in enumerate(agent_episode_rewards):
+                    train_infos[f"agent{agent_id}/average_episode_rewards"] = agent_reward
+                train_infos["all_agents/total_episode_rewards"] = total_episode_reward
                 train_infos["average_episode_rewards"] = np.mean(self.buffer.rewards) * self.episode_length
                 print("average episode rewards is {}".format(train_infos["average_episode_rewards"]))
                 self.log_train(train_infos, total_num_steps)
@@ -269,10 +273,28 @@ class EnvRunner(Runner):
 
         eval_episode_rewards = np.array(eval_episode_rewards)
         eval_env_infos = {}
-        eval_env_infos["eval_average_episode_rewards"] = np.sum(np.array(eval_episode_rewards), axis=0)
-        eval_average_episode_rewards = np.mean(eval_env_infos["eval_average_episode_rewards"])
+        episode_agent_rewards = self._episode_agent_reward_matrix(eval_episode_rewards)
+        eval_env_infos["eval_average_episode_rewards"] = episode_agent_rewards
+        for agent_id in range(self.num_agents):
+            eval_env_infos[f"agent{agent_id}/eval_average_episode_rewards"] = episode_agent_rewards[:, agent_id]
+        eval_env_infos["all_agents/eval_total_episode_rewards"] = np.sum(episode_agent_rewards, axis=1)
+        eval_average_episode_rewards = np.mean(episode_agent_rewards)
         print("eval average episode rewards of agent: " + str(eval_average_episode_rewards))
         self.log_env(eval_env_infos, total_num_steps)
+
+    def _episode_agent_reward_matrix(self, rewards):
+        """Collapse time dimension and squeeze trailing axes for per-agent episode stats."""
+        episode_rewards = np.sum(rewards, axis=0)
+        if episode_rewards.ndim == 3 and episode_rewards.shape[-1] == 1:
+            episode_rewards = episode_rewards.squeeze(-1)
+        return episode_rewards
+
+    def _mean_agent_episode_rewards(self, rewards):
+        """Compute mean per-agent and total episode rewards across rollout threads."""
+        episode_agent_rewards = self._episode_agent_reward_matrix(rewards)
+        agent_episode_rewards = np.mean(episode_agent_rewards, axis=0)
+        total_episode_rewards = np.mean(np.sum(episode_agent_rewards, axis=1))
+        return agent_episode_rewards, total_episode_rewards
 
     @torch.no_grad()
     def render(self):
