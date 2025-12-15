@@ -115,13 +115,13 @@ class DiscreteActionEnv(object):
         return np.stack(obs)
 
     def close(self):
-        pass
+        self.env.close()
 
     def render(self, mode="rgb_array"):
-        pass
+        return self.env.render(mode=mode)
 
     def seed(self, seed):
-        pass
+        return self.env.seed(seed)
 
     def apply_assignment_result(self, assignment: Optional[AssignmentResult]):
         self.env.apply_assignment_result(assignment)
