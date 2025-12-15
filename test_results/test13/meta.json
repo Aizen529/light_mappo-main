@@ -1,0 +1,13 @@
+{
+  "models_dir": "D:\\xuexi\\\u8def\u5f84\u89c4\u5212\u8bba\u6587\u8349\u7a3f\u53ca\u8d44\u6599\\attention_based_TSC\\light_mappo-main\\results\\MyEnv\\MyEnv\\mappo\\check\\run1\\models",
+  "config_path": "D:\\xuexi\\\u8def\u5f84\u89c4\u5212\u8bba\u6587\u8349\u7a3f\u53ca\u8d44\u6599\\attention_based_TSC\\light_mappo-main\\config.py",
+  "run_dir": "D:\\xuexi\\\u8def\u5f84\u89c4\u5212\u8bba\u6587\u8349\u7a3f\u53ca\u8d44\u6599\\attention_based_TSC\\light_mappo-main\\results\\MyEnv\\MyEnv\\mappo\\check\\run1",
+  "episodes": 5,
+  "seed": 1,
+  "max_episode_steps": null,
+  "fps": 10,
+  "render_first_n": 0,
+  "timestamp": "2025-12-16 00:32:25",
+  "device": "cpu",
+  "output_dir": "D:\\xuexi\\\u8def\u5f84\u89c4\u5212\u8bba\u6587\u8349\u7a3f\u53ca\u8d44\u6599\\attention_based_TSC\\light_mappo-main\\test_results\\test13"
+}
