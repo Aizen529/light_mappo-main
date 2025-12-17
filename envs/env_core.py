@@ -29,18 +29,10 @@ class EnvCore(object):
     )
 
     DEFAULT_INITIAL_POSITIONS: Tuple[Tuple[int, int], ...] = (
-        (0, 0),
-        (0, 7),
-        (7, 0),
-        (7, 7),
-    )
-    DEFAULT_OBSTACLES: Tuple[Tuple[int, int], ...] = (
-        (1, 2),(1, 3),(1, 4),(1, 5),(1, 6),
-        (2, 5),(2, 6),
-        (3, 5),(3, 6),
-        (5, 2),(5, 3),
-        (6, 6),
-        (7, 6),
+        (1, 1),   # red
+        (14, 7),  # yellow
+        (7, 14),  # blue
+        (18, 17), # green
     )
 
     COLOR_LEGEND = {
@@ -59,8 +51,8 @@ class EnvCore(object):
 
     def __init__(
         self,
-        map_height: int = 8,
-        map_width: int = 8,
+        map_height: int = 20,
+        map_width: int = 20,
         fov_size: int = 3,
         cover_reward: float = 1.0,
         max_episode_steps: Optional[int] = 500,
@@ -104,7 +96,9 @@ class EnvCore(object):
             self._validate_coordinates(self._preset_positions)
 
         self.obstacle_coords = (
-            tuple(obstacle_coords) if obstacle_coords is not None else self.DEFAULT_OBSTACLES
+            tuple(obstacle_coords)
+            if obstacle_coords is not None
+            else self._build_default_obstacles(self._preset_positions)
         )
         self._validate_coordinates(self.obstacle_coords)
 
@@ -295,6 +289,43 @@ class EnvCore(object):
     # -------------------------------------------------------------------------
     # Internal helpers
     # -------------------------------------------------------------------------
+    @staticmethod
+    def _rectangle_coords(row_start: int, row_end: int, col_start: int, col_end: int) -> List[Tuple[int, int]]:
+        """
+        Generate inclusive grid coordinates for the rectangle defined by
+        [row_start, row_end] x [col_start, col_end].
+        """
+        coords = []
+        for r in range(row_start, row_end + 1):
+            for c in range(col_start, col_end + 1):
+                coords.append((r, c))
+        return coords
+
+    def _build_default_obstacles(self, reserved_coords: Optional[Sequence[Tuple[int, int]]]) -> Tuple[Tuple[int, int], ...]:
+        """
+        Construct the default obstacle layout from predefined rectangles and
+        drop any cells that overlap reserved spawn coordinates.
+        """
+        rectangles = [
+            (2, 12, 3, 6),
+            (14, 16, 3, 5),
+            (4, 10, 9, 12),
+            (12, 15, 10, 11),
+            (12, 15, 15, 16),
+            (16, 18, 12, 14),
+            (1, 2, 16, 17),
+            (5, 9, 17, 18),
+        ]
+
+        coords = []
+        for row_start, row_end, col_start, col_end in rectangles:
+            coords.extend(self._rectangle_coords(row_start, row_end, col_start, col_end))
+
+        reserved = set(reserved_coords or [])
+        coords = [coord for coord in coords if coord not in reserved]
+        # Deduplicate while keeping deterministic order.
+        return tuple(sorted(set(coords)))
+
     def _validate_coordinates(self, coords: Sequence[Tuple[int, int]]):
         for row, col in coords:
             if not (0 <= row < self.map_height and 0 <= col < self.map_width):
