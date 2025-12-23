@@ -163,7 +163,7 @@ def get_config():
     parser.add_argument(
         "--experiment_name",
         type=str,
-        default="check",
+        default="wo_goal",
         help="an identifier to distinguish different experiment.",
     )
     parser.add_argument("--seed", type=int, default=1, help="Random seed for numpy/torch")
@@ -217,7 +217,7 @@ def get_config():
     )
 
     # env parameters
-    parser.add_argument("--env_name", type=str, default="MyEnv", help="specify the name of environment")
+    parser.add_argument("--env_name", type=str, default="12_23", help="specify the name of environment")
     parser.add_argument(
         "--use_obs_instead_of_state",
         action="store_true",
@@ -346,7 +346,7 @@ def get_config():
     parser.add_argument(
         "--num_mini_batch",
         type=int,
-        default=1,
+        default=4,
         help="number of batches for ppo (default: 1)",
     )
     parser.add_argument(
